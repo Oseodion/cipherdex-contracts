@@ -1,0 +1,112 @@
+# CipherDEX Contracts
+
+Confidential AMM smart contracts for CipherDEX — the first private DEX on FHEVM.
+Built for the Zama Developer Program Mainnet Season 2.
+
+## What these contracts do
+
+**The problem:** On every public DEX (Uniswap, Curve, etc.), swap amounts are visible to everyone before they settle. Bots read pending transactions and front-run them, costing traders over $1.3 billion per year.
+
+**Our solution:** CipherDEX encrypts swap amounts with FHE (Fully Homomorphic Encryption) before they ever touch the blockchain. The AMM math runs on encrypted ciphertexts via the Zama FHE coprocessor. Bots see an unreadable blob — front-running is cryptographically impossible.
+
+## Contracts
+
+### `ConfidentialToken.sol`
+ERC-7984 confidential fungible token. Balances stored as `euint64` — always encrypted.
+Used for both cUSDT (6 decimals) and cETH (9 decimals).
+
+**Key behaviour:**
+- `transfer()` never reverts — uses `FHE.select()` to send 0 if balance insufficient
+- Transfer events emit no amounts (prevents side-channel balance inference)
+- Only the balance owner (+ ACL-approved addresses) can decrypt their balance
+
+### `CipherDEXPool.sol`
+The core confidential AMM pool using the constant-product formula (x×y=k).
+
+**Key behaviour:**
+- `swap()` accepts `einput` (encrypted amount) + ZK proof from the user's browser
+- The FHE coprocessor computes the full AMM formula on ciphertexts
+- `FHE.select()` handles slippage: if output < minimum, sends 0 (no revert, no leak)
+- Reserves stored as `euint64` — nobody can see the pool depth
+- LP positions stored as `euint64` — nobody can see anyone else's share
+
+### `CipherDEXFaucet.sol`
+Mints free test cUSDT and cETH on Sepolia. 24-hour cooldown enforced on-chain.
+Judges and testers use this to get tokens before testing the swap.
+
+## Setup
+
+```bash
+# 1. Install dependencies
+npm install
+
+# 2. Copy environment template
+cp .env.example .env
+# Fill in SEPOLIA_RPC_URL and DEPLOYER_PRIVATE_KEY
+
+# 3. Compile
+npm run compile
+
+# 4. Run tests (mock mode - fast, no real FHE)
+npm test
+
+# 5. Deploy to Sepolia
+npm run deploy:sepolia
+
+# 6. Verify on Etherscan
+npm run verify
+```
+
+## Running tests
+
+```bash
+# Mock mode (fast - FHE operations use plaintext)
+npx hardhat test
+
+# With coverage report
+npx hardhat coverage
+
+# Against Sepolia (slow - real FHE, takes 30-60s per test)
+npx hardhat test --network sepolia
+```
+
+## FHE patterns used
+
+This codebase follows the canonical FHEVM patterns:
+
+```solidity
+// ALWAYS validate einput before use
+euint64 amount = TFHE.asEuint64(encInput, inputProof);
+
+// NEVER use if(ebool) - always FHE.select()
+ebool hasEnough = TFHE.ge(balance, amount);
+euint64 actual  = TFHE.select(hasEnough, amount, TFHE.asEuint64(0));
+
+// ALWAYS call allowThis() after writing encrypted state
+_balances[user] = TFHE.sub(_balances[user], actual);
+TFHE.allowThis(_balances[user]);
+
+// ALWAYS call allow(handle, user) so they can decrypt
+TFHE.allow(_balances[user], user);
+
+// ALWAYS call allowTransient() before passing handles to other contracts
+TFHE.allowTransient(amount, address(otherContract));
+```
+
+## Contract addresses (Sepolia)
+
+After deployment, addresses will be posted here and in the frontend `.env`.
+
+| Contract        | Address |
+|-----------------|---------|
+| cUSDT           | TBD     |
+| cETH            | TBD     |
+| CipherDEXPool   | TBD     |
+| CipherDEXFaucet | TBD     |
+
+## Dependencies
+
+- `fhevm` — Zama's FHEVM library with `TFHE.sol` and config contracts
+- `fhevm-contracts` — Standard confidential token base contracts
+- `@openzeppelin/contracts` — OpenZeppelin v5 (used by fhevm-contracts)
+- `hardhat` — Development and testing framework

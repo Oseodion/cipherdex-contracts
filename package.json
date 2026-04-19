@@ -1,0 +1,23 @@
+{
+  "name": "cipherdex-contracts",
+  "version": "1.0.0",
+  "description": "CipherDEX smart contracts - confidential AMM on FHEVM",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test"
+  },
+  "dependencies": {
+    "@fhevm/solidity": "latest",
+    "@openzeppelin/confidential-contracts": "latest",
+    "@openzeppelin/contracts": "^5.0.0"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@types/node": "^20.0.0",
+    "@zama-fhe/relayer-sdk": "^0.4.1",
+    "dotenv": "^16.0.0",
+    "hardhat": "^2.22.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.0.0"
+  }
+}
