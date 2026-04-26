@@ -12,9 +12,11 @@ import { ConfidentialToken } from "./ConfidentialToken.sol";
  * @dev    IMPORTANT - FHE division limitation:
  *         FHE.div(euint64, uint64) only supports plaintext divisors.
  *         Dividing encrypted by encrypted is not yet supported in FHEVM.
- *         We solve this by maintaining plaintext "snapshots" of the reserves
- *         that are updated after each swap. The snapshot is used as the divisor
- *         in all AMM calculations. This is the standard pattern for FHE AMMs.
+ *         We solve this by maintaining plaintext reserve snapshots and using
+ *         ratio pricing (snapshotOut / snapshotIn) as the public denominator.
+ *         Snapshot drift introduces large pricing errors over time, so swaps
+ *         do not mutate snapshots; snapshots only change when explicit plaintext
+ *         liquidity operations are performed.
  *
  *         Privacy guarantee is maintained because:
  *         - The encrypted reserves are never revealed
@@ -179,19 +181,22 @@ contract CipherDEXPool is ZamaEthereumConfig {
 
         if (snapshotIn == 0 || snapshotOut == 0) revert SnapshotTooSmall();
 
-        euint64 reserveOut = aToB ? _reserveB : _reserveA;
-
         // Apply 0.30% fee: amountInWithFee = amountIn * 9970 / 10000
         euint64 amountInWithFee = FHE.div(
             FHE.mul(amountIn, FHE.asEuint64(FEE_DENOMINATOR - FEE_NUMERATOR)),
             FEE_DENOMINATOR
         );
 
-        // AMM formula using plaintext snapshot as divisor:
-        // amountOut = reserveOut * amountInWithFee / (snapshotIn + amountInWithFee_approx)
-        // We use snapshotIn as the denominator - safe because snapshot is from last settled block
-        euint64 numerator = FHE.mul(reserveOut, amountInWithFee);
-        euint64 amountOut = FHE.div(numerator, snapshotIn);
+        // Snapshot-ratio pricing:
+        // amountOut = amountInWithFee * snapshotOut / snapshotIn
+        // All divisors remain plaintext to stay compatible with FHEVM constraints.
+        euint64 quotedOut = FHE.div(
+            FHE.mul(amountInWithFee, FHE.asEuint64(snapshotOut)),
+            snapshotIn
+        );
+        // Guard against stale snapshots quoting more than encrypted reserves.
+        ebool hasEnoughReserveOut = FHE.le(quotedOut, aToB ? _reserveB : _reserveA);
+        euint64 amountOut = FHE.select(hasEnoughReserveOut, quotedOut, aToB ? _reserveB : _reserveA);
 
         // Slippage: if output < minimum, send 0 instead of reverting
         ebool   slippageOk      = FHE.ge(amountOut, minAmountOut);
@@ -209,32 +214,18 @@ contract CipherDEXPool is ZamaEthereumConfig {
         FHE.allowThis(_reserveA);
         FHE.allowThis(_reserveB);
 
-        // Update snapshots using approximate values
-        // The snapshot will be slightly off until the next updateSnapshot() call
-        // Frontend calls updateSnapshot after each swap via the relayer
-        if (aToB) {
-            reserveSnapshotA = reserveSnapshotA + snapshotIn / 100;
-            if (reserveSnapshotB > snapshotOut / 100) {
-                reserveSnapshotB = reserveSnapshotB - snapshotOut / 100;
-            }
-        } else {
-            reserveSnapshotB = reserveSnapshotB + snapshotIn / 100;
-            if (reserveSnapshotA > snapshotOut / 100) {
-                reserveSnapshotA = reserveSnapshotA - snapshotOut / 100;
-            }
-        }
+        // Do not mutate plaintext snapshots in encrypted swap flow.
+        // Encrypted amounts cannot be safely folded into uint64 snapshots without
+        // introducing deterministic drift and direction bias.
 
         // Execute transfers
-        ConfidentialToken tokenIn  = aToB ? tokenA : tokenB;
-        ConfidentialToken tokenOut = aToB ? tokenB : tokenA;
+        FHE.allowTransient(actualAmountIn, address(aToB ? tokenA : tokenB));
+        FHE.allowTransient(actualAmountOut, address(aToB ? tokenB : tokenA));
 
-        FHE.allowTransient(actualAmountIn, address(tokenIn));
-        FHE.allowTransient(actualAmountOut, address(tokenOut));
-
-        tokenIn.confidentialTransferFrom(msg.sender, address(this), actualAmountIn);
+        (aToB ? tokenA : tokenB).confidentialTransferFrom(msg.sender, address(this), actualAmountIn);
 
         FHE.allow(actualAmountOut, msg.sender);
-        tokenOut.confidentialTransfer(msg.sender, actualAmountOut);
+        (aToB ? tokenB : tokenA).confidentialTransfer(msg.sender, actualAmountOut);
 
         emit Swap(msg.sender, aToB, block.timestamp);
         emit SnapshotUpdated(reserveSnapshotA, reserveSnapshotB);

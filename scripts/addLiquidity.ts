@@ -4,10 +4,18 @@ import { ethers } from "hardhat";
 // No FHE SDK required — deployer is the owner.
 // Run: npx hardhat run scripts/addLiquidity.ts --network sepolia
 
+const requireAddress = (name: string) => {
+  const value = process.env[name];
+  if (!value || !ethers.isAddress(value)) {
+    throw new Error(`Missing or invalid ${name}. Set it in environment before running this script.`);
+  }
+  return value;
+};
+
 const CONTRACTS = {
-  cUSDT: "0x401924f4bd976A0168eCa95253eAE61590e89115",
-  cETH:  "0x51aA0DA9A1100deb3f2B2B75dD4cc1b67A5590F4",
-  pool:  "0x34ADB4dfc310dAF08982E10BA8162794A7521734",
+  cUSDT: requireAddress("NEXT_PUBLIC_CUSDT_ADDRESS"),
+  cETH: requireAddress("NEXT_PUBLIC_CETH_ADDRESS"),
+  pool: requireAddress("NEXT_PUBLIC_POOL_ADDRESS"),
 };
 
 // 15,000 cUSDT (6 dec) + 11.5 cETH (9 dec)
