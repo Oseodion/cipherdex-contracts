@@ -1,7 +1,7 @@
 # CipherDEX Contracts
 
-Confidential AMM smart contracts for CipherDEX — the first private DEX on FHEVM.
-Built for the Zama Developer Program Mainnet Season 2.
+Confidential AMM smart contracts for CipherDEX.
+Built for the Zama developer competition.
 
 ## What these contracts do
 
@@ -21,11 +21,11 @@ Used for both cUSDT (6 decimals) and cETH (9 decimals).
 - Only the balance owner (+ ACL-approved addresses) can decrypt their balance
 
 ### `CipherDEXPool.sol`
-The core confidential AMM pool using the constant-product formula (x×y=k).
+The core confidential AMM pool for encrypted swaps and liquidity.
 
 **Key behaviour:**
 - `swap()` accepts `einput` (encrypted amount) + ZK proof from the user's browser
-- The FHE coprocessor computes the full AMM formula on ciphertexts
+- The pool computes encrypted output amounts using plaintext reserve snapshots as divisors (FHEVM-safe pattern)
 - `FHE.select()` handles slippage: if output < minimum, sends 0 (no revert, no leak)
 - Reserves stored as `euint64` — nobody can see the pool depth
 - LP positions stored as `euint64` — nobody can see anyone else's share
@@ -51,10 +51,14 @@ npm run compile
 npm test
 
 # 5. Deploy to Sepolia
-npm run deploy:sepolia
+npx hardhat run scripts/deploy.ts --network sepolia
 
-# 6. Verify on Etherscan
-npm run verify
+# 6. Initialize pool after deploy
+npx hardhat run scripts/claimFromFaucet.ts --network sepolia
+npx hardhat run scripts/initializePool.ts --network sepolia
+
+# 7. Optional: top up liquidity
+npx hardhat run scripts/addLiquidity.ts --network sepolia
 ```
 
 ## Running tests
@@ -95,14 +99,12 @@ TFHE.allowTransient(amount, address(otherContract));
 
 ## Contract addresses (Sepolia)
 
-After deployment, addresses will be posted here and in the frontend `.env`.
-
-| Contract        | Address |
-|-----------------|---------|
-| cUSDT           | TBD     |
-| cETH            | TBD     |
-| CipherDEXPool   | TBD     |
-| CipherDEXFaucet | TBD     |
+| Contract        | Address                                                                                                                     |
+|-----------------|-----------------------------------------------------------------------------------------------------------------------------|
+| cUSDT           | [`0x22a96c71fA47A26C7E8a6725235A31e9e204A2AB`](https://sepolia.etherscan.io/address/0x22a96c71fA47A26C7E8a6725235A31e9e204A2AB) |
+| cETH            | [`0xb232fc05c4b6E24eC3111f5342E39F8960176Dba`](https://sepolia.etherscan.io/address/0xb232fc05c4b6E24eC3111f5342E39F8960176Dba) |
+| CipherDEXPool   | [`0x4e879AcfC307BD2a1166FaCC5EaD9380550431CA`](https://sepolia.etherscan.io/address/0x4e879AcfC307BD2a1166FaCC5EaD9380550431CA) |
+| CipherDEXFaucet | [`0x680a7C30BA61249cCfD99AD875581A023fEB4Fb0`](https://sepolia.etherscan.io/address/0x680a7C30BA61249cCfD99AD875581A023fEB4Fb0) |
 
 ## Dependencies
 
